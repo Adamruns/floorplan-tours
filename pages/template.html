@@ -1,0 +1,43 @@
+<title>{{TITLE}}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231d6a72'/%3E%3Cpath d='M7 15 16 8l9 7v10H7z' fill='none' stroke='%23f3fafa' stroke-width='2.4' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="description" content="{{DESCRIPTION}}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+{{STYLE}}
+</style>
+<main class="tour" id="tour" data-mode="overview">
+  <canvas id="scene" aria-label="{{CANVAS_LABEL}}"></canvas>
+  <div class="labels" id="labels"></div>
+  <div class="topbar">
+    <header class="plate panel">
+      <p class="plate-eyebrow" id="plate-eyebrow"></p>
+      <h1 class="plate-name" id="plate-name"></h1>
+      <p class="plate-specs" id="plate-specs"></p>
+      <p class="plate-note" id="plate-note"></p>
+    </header>
+    <div class="controls">
+      <div class="mode-switch panel" role="group" aria-label="View">
+        <button type="button" id="mode-overview" aria-pressed="true">Overview</button>
+        <button type="button" id="mode-walk" aria-pressed="false">Walk through</button>
+      </div>
+      <button type="button" class="finishes-toggle panel" id="staging-toggle" aria-pressed="true" title="Show or hide furniture">Furnished</button>
+      <button type="button" class="finishes-toggle panel" id="finishes-toggle" aria-expanded="false" aria-controls="finishes">Finishes</button>
+      <button type="button" class="finishes-toggle panel" id="quality-toggle" aria-pressed="true" title="High-definition rendering: smoother edges and soft contact shadows">HD</button>
+      <button type="button" class="finishes-toggle panel" id="photo-button" title="Save a high-resolution image of this view" hidden>Save photo</button>
+    </div>
+  </div>
+  <section class="finishes panel" id="finishes" aria-label="Finishes" hidden></section>
+  <canvas class="minimap panel" id="minimap" width="200" height="240" aria-label="Floor plan map. Click to jump to a spot." hidden></canvas>
+  <div class="joystick panel" id="joystick" hidden><div class="joystick-knob"></div></div>
+  <nav class="rooms" aria-label="Rooms">
+    <p class="hint" id="hint"></p>
+    <div class="room-chips panel" id="room-chips"></div>
+  </nav>
+  <div class="loading" id="loading"><p>{{LOADING}}</p></div>
+</main>
+<script type="module">
+{{SCRIPT}}
+</script>

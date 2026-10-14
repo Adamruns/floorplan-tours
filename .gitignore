@@ -1,0 +1,8 @@
+# Builder and listing photos are reference material, not ours to publish.
+reference/
+review/
+dist/
+# Private sales material: lead notes and outreach drafts stay off the public repo.
+leads.md
+outreach/
+.DS_Store
