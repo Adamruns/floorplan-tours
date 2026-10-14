@@ -9,6 +9,10 @@ const LOOK_SPEED = 0.0042;
 const WALK_FOV = 72;
 const OVERVIEW_FOV = 36;
 const DOOR_HEAD = 6.67;
+const PORTRAIT_ASPECT = 0.85;
+// The overview camera sits up to ~180 ft away; a farther near plane keeps the floor from depth-fighting the slab under it.
+const OVERVIEW_NEAR = 2;
+const WALK_NEAR = 0.25;
 const UP = new THREE.Vector3(0, 1, 0);
 
 function polygonArea(points) {
@@ -417,6 +421,9 @@ function startTour(plan) {
     photoButton: document.getElementById('photo-button'),
     qualityToggle: document.getElementById('quality-toggle'),
     stagingToggle: document.getElementById('staging-toggle'),
+    viewOptions: document.getElementById('view-options'),
+    rooms: document.querySelector('.rooms'),
+    topbar: document.querySelector('.topbar'),
     tour: document.getElementById('tour'),
   };
 
@@ -499,7 +506,8 @@ function startTour(plan) {
 
     const slab = new THREE.ExtrudeGeometry(floorShape, { depth: room.outdoor ? 0.6 : 1.0, bevelEnabled: false });
     slab.rotateX(-Math.PI / 2);
-    slab.translate(0, -(room.outdoor ? 0.6 : 1.0) - 0.01, 0);
+    // The slab top sits 2" below the floor so distant overview cameras can still tell the two apart.
+    slab.translate(0, -(room.outdoor ? 0.6 : 1.0) - 0.15, 0);
     const plinth = new THREE.Mesh(slab, materials.plinth);
     plinth.receiveShadow = true;
     world.root.add(plinth);
@@ -560,8 +568,9 @@ function startTour(plan) {
   const shadowSpan = planRadius + 6;
   Object.assign(sun.shadow.camera, { left: -shadowSpan, right: shadowSpan, top: shadowSpan, bottom: -shadowSpan, near: 1, far: 220 });
   sun.shadow.camera.updateProjectionMatrix();
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.04;
+  // Phones use half the shadow resolution, so each texel covers twice the floor and needs twice the bias.
+  sun.shadow.bias = highQuality ? -0.0005 : -0.001;
+  sun.shadow.normalBias = highQuality ? 0.04 : 0.09;
   scene.add(sun);
 
   const lightWeight = (room) => room.area * (room.lightScale ?? 1);
@@ -570,7 +579,8 @@ function startTour(plan) {
   for (const [index, room] of lightRooms.entries()) {
     const light = new THREE.PointLight(plan.roomLightColor ?? '#ffe4c6', ((plan.roomLightIntensity ?? 14) + room.area * 0.42) * (room.lightScale ?? 1), 0, 2);
     light.position.set(room.centroid.x, ceilingHeight - 1.5, room.centroid.z);
-    if (index < (plan.shadowedRoomLights ?? 6)) {
+    // Phones skip room-light shadows: at phone-sized shadow maps they render as blocky patches, and they cost the most GPU time.
+    if (index < (plan.shadowedRoomLights ?? (highQuality ? 6 : 0))) {
       light.castShadow = true;
       light.shadow.mapSize.set(highQuality ? 1024 : 512, highQuality ? 1024 : 512);
       light.shadow.bias = -0.004;
@@ -622,6 +632,17 @@ function startTour(plan) {
   function fitRadius() {
     const verticalHalf = THREE.MathUtils.degToRad(OVERVIEW_FOV / 2);
     const horizontalHalf = Math.atan(Math.tan(verticalHalf) * camera.aspect);
+    // Portrait screens look down the plan's long axis, so fit its width and foreshortened depth separately,
+    // and fit the depth into the strip between the header and the room buttons rather than the whole screen.
+    if (camera.aspect < PORTRAIT_ASPECT) {
+      const halfWidth = (bounds.maxX - bounds.minX) / 2 + 2;
+      const halfDepth = (bounds.maxZ - bounds.minZ) / 2 + 2;
+      const depthOnScreen = halfDepth * Math.cos(state.orbit.polar) + ceilingHeight * Math.sin(state.orbit.polar);
+      const { top, bottom } = screenInsets();
+      const height = elements.canvas.clientHeight;
+      const freeFraction = Math.max(0.4, (height - top - bottom) / height);
+      return Math.max(halfWidth / Math.tan(horizontalHalf), depthOnScreen / (Math.tan(verticalHalf) * freeFraction)) * 1.04;
+    }
     return (planRadius / Math.sin(Math.min(verticalHalf, horizontalHalf))) * 1.08;
   }
 
@@ -643,6 +664,38 @@ function startTour(plan) {
       quaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ')),
       fov: WALK_FOV,
     };
+  }
+
+  function screenInsets() {
+    const canvasBox = elements.canvas.getBoundingClientRect();
+    return {
+      top: Math.max(0, elements.topbar.getBoundingClientRect().bottom - canvasBox.top),
+      bottom: Math.max(0, canvasBox.bottom - elements.rooms.getBoundingClientRect().top),
+    };
+  }
+
+  // Shifts the image so the overview centers in the free strip between the header and the room buttons.
+  let viewShift = 0;
+  function updateViewShift(delta) {
+    let target = 0;
+    if (state.mode === 'overview' && camera.aspect < PORTRAIT_ASPECT) {
+      const { top, bottom } = screenInsets();
+      target = (top - bottom) / 2;
+    }
+    viewShift += (target - viewShift) * Math.min(1, delta * 5);
+    if (Math.abs(target - viewShift) < 0.5) {
+      viewShift = target;
+    }
+    const width = elements.canvas.clientWidth;
+    const height = elements.canvas.clientHeight;
+    if (Math.abs(viewShift) < 0.5) {
+      if (camera.view?.enabled) {
+        camera.clearViewOffset();
+      }
+    } else {
+      camera.setViewOffset(width, height, 0, -viewShift, width, height);
+    }
+    return target !== viewShift;
   }
 
   function applyPose(pose) {
@@ -690,6 +743,11 @@ function startTour(plan) {
     }
   }
 
+  function setNear(near) {
+    camera.near = near;
+    camera.updateProjectionMatrix();
+  }
+
   function setCeilingsVisible(visible) {
     ceilingGroup.visible = visible;
     renderer.shadowMap.needsUpdate = true;
@@ -712,8 +770,9 @@ function startTour(plan) {
     if (mode === 'overview') {
       state.walker.autopilot = null;
       setCeilingsVisible(false);
-      flyTo(orbitPose(), { duration: 1300, vertical: 'early' });
+      flyTo(orbitPose(), { duration: 1300, vertical: 'early', onDone: () => setNear(OVERVIEW_NEAR) });
     } else {
+      setNear(WALK_NEAR);
       flyTo(walkerPose(), { duration: 1400, vertical: 'late', onDone: () => setCeilingsVisible(true) });
     }
   }
@@ -875,16 +934,41 @@ function startTour(plan) {
     label.tabIndex = room.view ? 0 : -1;
     label.addEventListener('click', () => goToRoom(room));
     elements.labels.appendChild(label);
-    labelEntries.push({ label, anchor: new THREE.Vector3(room.centroid.x, 0.6, room.centroid.z) });
+    labelEntries.push({ label, anchor: new THREE.Vector3(room.centroid.x, 0.6, room.centroid.z), priority: room.area + (room.dimensions ? 1000 : 0), size: null });
   }
+
+  // When labels collide, the bigger room keeps its label; dimensioned rooms win over the rest.
+  labelEntries.sort((first, second) => second.priority - first.priority);
+  document.fonts?.ready.then(() => {
+    for (const entry of labelEntries) {
+      entry.size = null;
+    }
+    state.needsRender = true;
+  });
 
   const projected = new THREE.Vector3();
   function updateLabels() {
     const width = elements.canvas.clientWidth;
     const height = elements.canvas.clientHeight;
-    for (const { label, anchor } of labelEntries) {
-      projected.copy(anchor).project(camera);
-      label.style.transform = `translate(${((projected.x + 1) / 2) * width}px, ${((1 - projected.y) / 2) * height}px) translate(-50%, -50%)`;
+    for (const entry of labelEntries) {
+      if (!entry.size) {
+        entry.size = [entry.label.offsetWidth, entry.label.offsetHeight];
+      }
+    }
+
+    const placed = [];
+    for (const entry of labelEntries) {
+      projected.copy(entry.anchor).project(camera);
+      const x = ((projected.x + 1) / 2) * width;
+      const y = ((1 - projected.y) / 2) * height;
+      const [labelWidth, labelHeight] = entry.size;
+      const box = { left: x - labelWidth / 2 - 3, right: x + labelWidth / 2 + 3, top: y - labelHeight / 2 - 2, bottom: y + labelHeight / 2 + 2 };
+      const covered = placed.some((other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top);
+      if (!covered) {
+        placed.push(box);
+      }
+      entry.label.style.visibility = covered ? 'hidden' : '';
+      entry.label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
     }
   }
 
@@ -999,6 +1083,21 @@ function startTour(plan) {
     renderer.shadowMap.needsUpdate = true;
     state.needsRender = true;
   });
+
+  // Phones fold Furnished, HD and Save photo into the finishes sheet so the header stays one row.
+  const narrowScreen = window.matchMedia('(max-width: 640px)');
+  function placeViewOptions() {
+    if (narrowScreen.matches) {
+      elements.finishes.prepend(elements.viewOptions);
+    } else {
+      elements.finishesToggle.after(elements.viewOptions);
+    }
+    elements.finishesToggle.textContent = narrowScreen.matches ? 'Options' : 'Finishes';
+    elements.finishes.setAttribute('aria-label', narrowScreen.matches ? 'Options' : 'Finishes');
+    elements.finishesToggle.hidden = !(plan.finishes?.length) && !narrowScreen.matches;
+  }
+  narrowScreen.addEventListener('change', placeViewOptions);
+  placeViewOptions();
 
   elements.modeOverview.addEventListener('click', () => setMode('overview'));
   elements.modeWalk.addEventListener('click', () => setMode('walk'));
@@ -1271,8 +1370,11 @@ function startTour(plan) {
     const height = elements.canvas.clientHeight;
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(width, height, false);
-    composer.setPixelRatio(pixelRatio);
-    composer.setSize(width, height);
+    // The HD buffers cost tens of megabytes, so phones skip them until someone turns HD on.
+    if (state.quality === 'hd') {
+      composer.setPixelRatio(pixelRatio);
+      composer.setSize(width, height);
+    }
   }
 
   function resize() {
@@ -1292,7 +1394,15 @@ function startTour(plan) {
   new ResizeObserver(resize).observe(elements.canvas);
   resize();
 
+  if (camera.aspect < PORTRAIT_ASPECT) {
+    state.orbit.polar = Math.min(state.orbit.polar, 0.5);
+    state.orbit.azimuth *= 0.3;
+    state.orbit.radius = fitRadius();
+    updateViewShift(1);
+  }
+
   setCeilingsVisible(false);
+  setNear(OVERVIEW_NEAR);
   elements.tour.dataset.mode = 'overview';
   updateHint();
   applyPose(orbitPose());
@@ -1312,6 +1422,10 @@ function startTour(plan) {
       active = true;
     } else {
       applyPose(orbitPose());
+    }
+
+    if (updateViewShift(delta)) {
+      active = true;
     }
 
     if (state.mode === 'walk' && !reducedMotion) {
@@ -1353,7 +1467,7 @@ function startTour(plan) {
   elements.qualityToggle.addEventListener('click', () => {
     state.quality = state.quality === 'hd' ? 'standard' : 'hd';
     elements.qualityToggle.setAttribute('aria-pressed', String(state.quality === 'hd'));
-    state.needsRender = true;
+    resize();
   });
 
   // The artifact viewer blocks downloads, so the photo button only appears on a standalone page.

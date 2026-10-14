@@ -23,10 +23,12 @@
         <button type="button" id="mode-overview" aria-pressed="true">Overview</button>
         <button type="button" id="mode-walk" aria-pressed="false">Walk through</button>
       </div>
-      <button type="button" class="finishes-toggle panel" id="staging-toggle" aria-pressed="true" title="Show or hide furniture">Furnished</button>
       <button type="button" class="finishes-toggle panel" id="finishes-toggle" aria-expanded="false" aria-controls="finishes">Finishes</button>
-      <button type="button" class="finishes-toggle panel" id="quality-toggle" aria-pressed="true" title="High-definition rendering: smoother edges and soft contact shadows">HD</button>
-      <button type="button" class="finishes-toggle panel" id="photo-button" title="Save a high-resolution image of this view" hidden>Save photo</button>
+      <div class="view-options" id="view-options">
+        <button type="button" class="finishes-toggle panel" id="staging-toggle" aria-pressed="true" title="Show or hide furniture">Furnished</button>
+        <button type="button" class="finishes-toggle panel" id="quality-toggle" aria-pressed="true" title="High-definition rendering: smoother edges and soft contact shadows">HD</button>
+        <button type="button" class="finishes-toggle panel" id="photo-button" title="Save a high-resolution image of this view" hidden>Save photo</button>
+      </div>
     </div>
   </div>
   <section class="finishes panel" id="finishes" aria-label="Finishes" hidden></section>
